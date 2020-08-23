@@ -35,15 +35,15 @@ describe GraphQL::Pagination::Connections do
   end
 
   it "returns connections by class, using inherited mappings and local overrides" do
-    field_defn = OpenStruct.new(max_page_size: 10)
+    field_defn = OpenStruct.new(max_page_size: 10, type: GraphQL::Types::Relay::BaseConnection)
 
-    set_wrapper = schema.connections.wrap(field_defn, Set.new([1,2,3]), {}, nil)
+    set_wrapper = schema.connections.wrap(field_defn, nil, Set.new([1,2,3]), {}, nil)
     assert_instance_of SetConnection, set_wrapper
 
-    hash_wrapper = schema.connections.wrap(field_defn, {1 => :a, 2 => :b}, {}, nil)
+    hash_wrapper = schema.connections.wrap(field_defn, nil, {1 => :a, 2 => :b}, {}, nil)
     assert_instance_of HashConnection, hash_wrapper
 
-    array_wrapper = schema.connections.wrap(field_defn, [1,2,3], {}, nil)
+    array_wrapper = schema.connections.wrap(field_defn, nil, [1,2,3], {}, nil)
     assert_instance_of OtherArrayConnection, array_wrapper
   end
 
@@ -51,7 +51,7 @@ describe GraphQL::Pagination::Connections do
     field_defn = OpenStruct.new(max_page_size: 10)
 
     assert_raises GraphQL::Pagination::Connections::ImplementationMissingError do
-      schema.connections.wrap(field_defn, Set.new([1,2,3]), {}, nil, wrappers: {})
+      schema.connections.wrap(field_defn, nil, Set.new([1,2,3]), {}, nil, wrappers: {})
     end
   end
 
@@ -111,5 +111,24 @@ describe GraphQL::Pagination::Connections do
     end
 
     assert_includes err.message, "undefined method `no_such_method' for <BadThing!>"
+  end
+
+  class SingleNewConnectionSchema < GraphQL::Schema
+    class Query < GraphQL::Schema::Object
+      field :strings, GraphQL::Types::String.connection_type, null: false
+
+      def strings
+        GraphQL::Pagination::ArrayConnection.new(["a", "b", "c"])
+      end
+    end
+
+    query(Query)
+    use GraphQL::Execution::Interpreter
+    use GraphQL::Analysis::AST
+  end
+
+  it "works when new connections are not installed" do
+    res = SingleNewConnectionSchema.execute("{ strings(first: 2) { edges { node } } }")
+    assert_equal ["a", "b"], res["data"]["strings"]["edges"].map { |e| e["node"] }
   end
 end

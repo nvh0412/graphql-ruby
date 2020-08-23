@@ -1,6 +1,6 @@
 {
   "name": "graphql-ruby-client",
-  "version": "1.7.7",
+  "version": "1.7.11",
   "description": "JavaScript client for graphql-ruby",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -15,7 +15,8 @@
     "@types/node": "^13.7.1",
     "jest": "^25.0.0",
     "nock": "^11.0.0",
-    "ts-jest": "^25.2.0"
+    "ts-jest": "^25.2.0",
+    "prettier": "^1.19.1"
   },
   "scripts": {
     "test": "tsc && jest",
@@ -32,6 +33,10 @@
     "typescript": "^3.7.5"
   },
   "prettier": {
-    "semi": false
+    "semi": false,
+    "trailingComma": "none"
+  },
+  "engines": {
+    "node": ">=10"
   }
 }

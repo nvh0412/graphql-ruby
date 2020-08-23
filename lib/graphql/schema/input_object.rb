@@ -10,20 +10,19 @@ module GraphQL
 
       include GraphQL::Dig
 
-      def initialize(values = nil, ruby_kwargs: nil, context:, defaults_used:)
+      def initialize(arguments = nil, ruby_kwargs: nil, context:, defaults_used:)
         @context = context
         if ruby_kwargs
           @ruby_style_hash = ruby_kwargs
+          @arguments = arguments
         else
-          @arguments = self.class.arguments_class.new(values, context: context, defaults_used: defaults_used)
+          @arguments = self.class.arguments_class.new(arguments, context: context, defaults_used: defaults_used)
           # Symbolized, underscored hash:
           @ruby_style_hash = @arguments.to_kwargs
         end
         # Apply prepares, not great to have it duplicated here.
-        @arguments_by_keyword = {}
         maybe_lazies = []
-        self.class.arguments.each do |name, arg_defn|
-          @arguments_by_keyword[arg_defn.keyword] = arg_defn
+        self.class.arguments.each_value do |arg_defn|
           ruby_kwargs_key = arg_defn.keyword
 
           if @ruby_style_hash.key?(ruby_kwargs_key)
@@ -56,7 +55,7 @@ module GraphQL
       # @return [GraphQL::Query::Context] The context for this query
       attr_reader :context
 
-      # @return [GraphQL::Query::Arguments] The underlying arguments instance
+      # @return [GraphQL::Query::Arguments, GraphQL::Execution::Interpereter::Arguments] The underlying arguments instance
       attr_reader :arguments
 
       # Ruby-like hash behaviors, read-only
@@ -167,10 +166,7 @@ module GraphQL
             return result
           end
 
-          # We're not actually _using_ the coerced result, we're just
-          # using these methods to make sure that the object will
-          # behave like a hash below, when we call `each` on it.
-          begin
+          input = begin
             input.to_h
           rescue
             begin
@@ -183,21 +179,25 @@ module GraphQL
             end
           end
 
-          visible_arguments_map = warden.arguments(self).reduce({}) { |m, f| m[f.name] = f; m}
-
-          # Items in the input that are unexpected
-          input.each do |name, value|
-            if visible_arguments_map[name].nil?
-              result.add_problem("Field is not defined on #{self.graphql_name}", [name])
+          # Inject missing required arguments
+          missing_required_inputs = self.arguments.reduce({}) do |m, (argument_name, argument)|
+            if !input.key?(argument_name) && argument.type.non_null? && warden.get_argument(self, argument_name)
+              m[argument_name] = nil
             end
+
+            m
           end
 
-          # Items in the input that are expected, but have invalid values
-          visible_arguments_map.map do |name, argument|
-            argument_result = argument.type.validate_input(input[name], ctx)
-            if !argument_result.valid?
-              result.merge_result!(name, argument_result)
+          input.merge(missing_required_inputs).each do |argument_name, value|
+            argument = warden.get_argument(self, argument_name)
+            # Items in the input that are unexpected
+            unless argument
+              result.add_problem("Field is not defined on #{self.graphql_name}", [argument_name])
+              next
             end
+            # Items in the input that are expected, but have invalid values
+            argument_result = argument.type.validate_input(value, ctx)
+            result.merge_result!(argument_name, argument_result) unless argument_result.valid?
           end
 
           result
@@ -208,10 +208,12 @@ module GraphQL
             return nil
           end
 
-          input_values = coerce_arguments(nil, value, ctx)
+          arguments = coerce_arguments(nil, value, ctx)
 
-          input_obj_instance = self.new(ruby_kwargs: input_values, context: ctx, defaults_used: nil)
-          input_obj_instance.prepare
+          ctx.schema.after_lazy(arguments) do |resolved_arguments|
+            input_obj_instance = self.new(resolved_arguments, ruby_kwargs: resolved_arguments.keyword_arguments, context: ctx, defaults_used: nil)
+            input_obj_instance.prepare
+          end
         end
 
         # It's funny to think of a _result_ of an input object.

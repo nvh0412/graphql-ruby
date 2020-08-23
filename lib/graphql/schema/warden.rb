@@ -91,7 +91,6 @@ module GraphQL
 
       # @return [GraphQL::Field, nil] The field named `field_name` on `parent_type`, if it exists
       def get_field(parent_type, field_name)
-
         @visible_parent_fields ||= read_through do |type|
           read_through do |f_name|
             field_defn = @schema.get_field(type, f_name)
@@ -104,6 +103,12 @@ module GraphQL
         end
 
         @visible_parent_fields[parent_type][field_name]
+      end
+
+      # @return [GraphQL::Argument, nil] The argument named `argument_name` on `parent_type`, if it exists and is visible
+      def get_argument(parent_type, argument_name)
+        argument = parent_type.get_argument(argument_name)
+        return argument if argument && visible_argument?(argument)
       end
 
       # @return [Array<GraphQL::BaseType>] The types which may be member of `type_defn`
@@ -166,7 +171,13 @@ module GraphQL
       end
 
       def visible_field?(owner_type, field_defn)
-        visible?(field_defn) && visible_type?(field_defn.type.unwrap) && field_on_visible_interface?(field_defn, owner_type)
+        # This field is visible in its own right
+        visible?(field_defn) &&
+          # This field's return type is visible
+          visible_type?(field_defn.type.unwrap) &&
+          # This field is either defined on this object type,
+          # or the interface it's inherited from is also visible
+          ((field_defn.respond_to?(:owner) && field_defn.owner == owner_type) || field_on_visible_interface?(field_defn, owner_type))
       end
 
       # We need this to tell whether a field was inherited by an interface
@@ -188,7 +199,7 @@ module GraphQL
             if (iface_field_defn = interface_type.get_field(field_defn.graphql_name))
               any_interface_has_field = true
 
-              if visible?(interface_type) && visible_field?(interface_type, iface_field_defn)
+              if interfaces(type_defn).include?(interface_type) && visible_field?(interface_type, iface_field_defn)
                 any_interface_has_visible_field = true
               end
             end

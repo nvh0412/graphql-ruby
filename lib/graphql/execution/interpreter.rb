@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+require "graphql/execution/interpreter/argument_value"
+require "graphql/execution/interpreter/arguments"
 require "graphql/execution/interpreter/arguments_cache"
 require "graphql/execution/interpreter/execution_errors"
 require "graphql/execution/interpreter/hash_response"
@@ -24,7 +26,7 @@ module GraphQL
         schema_class.query_execution_strategy(GraphQL::Execution::Interpreter)
         schema_class.mutation_execution_strategy(GraphQL::Execution::Interpreter)
         schema_class.subscription_execution_strategy(GraphQL::Execution::Interpreter)
-
+        schema_class.add_subscription_extension_if_necessary
         GraphQL::Schema::Object.include(HandlesRawValue)
       end
 

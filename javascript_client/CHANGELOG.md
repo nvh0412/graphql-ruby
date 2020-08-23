@@ -1,5 +1,22 @@
 # graphql-ruby-client
 
+## 1.7.11 (15 June 2020)
+
+- Ably: Improve channel state handling in case the initial subscription result contains errors #2993
+
+## 1.7.10 (13 June 2020)
+
+- Ably: Improve error handling and channel cleanup #2991
+
+## 1.7.9 (15 May 2020)
+
+- Ably: _completely_ unsubscribe when subscriptions are done #2944
+- Ably: propagate errors from subscriptions #2944
+
+## 1.7.8 (1 May 2020)
+
+- `sync`: Add support for Apollo-Android's `OperationOutput.json` #2914
+
 ## 1.7.7 (15 Apr 2020)
 
 - Ably handler: dispatch initial response #2866

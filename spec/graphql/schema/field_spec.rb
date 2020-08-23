@@ -95,6 +95,16 @@ describe GraphQL::Schema::Field do
       assert_equal type.to_graphql, field.to_graphql.type
     end
 
+    describe "introspection?" do
+      it "returns false on regular fields" do
+        assert_equal false, field.introspection?
+      end
+
+      it "returns true on predefined introspection fields" do
+        assert_equal true, GraphQL::Schema.types['__Type'].fields.values.first.introspection?
+      end
+    end
+
     describe "extras" do
       it "can get errors, which adds path" do
         query_str = <<-GRAPHQL
@@ -146,6 +156,45 @@ describe GraphQL::Schema::Field do
 
         field.extras([:ast_node])
         assert_equal [:lookahead, :ast_node], field.extras
+      end
+
+      describe "argument_details" do
+        class ArgumentDetailsSchema < GraphQL::Schema
+          class Query < GraphQL::Schema::Object
+            field :argument_details, [String], null: false, extras: [:argument_details] do
+              argument :arg1, Int, required: false
+              argument :arg2, Int, required: false, default_value: 2
+            end
+
+            def argument_details(argument_details:, arg1: nil, arg2:)
+              [
+                argument_details.class.name,
+                argument_details.argument_values.values.first.class.name,
+                # `.keyword_arguments` includes extras:
+                argument_details.keyword_arguments.keys.join("|"),
+                # `.argument_values` includes only defined GraphQL arguments:
+                argument_details.argument_values.keys.join("|"),
+                argument_details.argument_values[:arg2].default_used?.inspect
+              ]
+            end
+          end
+
+          query(Query)
+          use(GraphQL::Execution::Interpreter)
+          use(GraphQL::Analysis::AST)
+        end
+
+        it "provides metadata about arguments" do
+          res = ArgumentDetailsSchema.execute("{ argumentDetails }")
+          expected_strs = [
+            "GraphQL::Execution::Interpreter::Arguments",
+            "GraphQL::Execution::Interpreter::ArgumentValue",
+            "arg2|argument_details",
+            "arg2",
+            "true",
+          ]
+          assert_equal expected_strs, res["data"]["argumentDetails"]
+        end
       end
     end
 
@@ -377,6 +426,53 @@ describe GraphQL::Schema::Field do
     it "can be inherited" do
       child_field_class = Class.new(CustomExtensionField)
       assert_equal CustomConnectionExtension, child_field_class.connection_extension
+    end
+  end
+
+  describe "looking up hash keys with case" do
+    class HashKeySchema < GraphQL::Schema
+      class ResultType < GraphQL::Schema::Object
+        field :lowercase, String, camelize: false, null: true
+        field :Capital, String, camelize: false, null: true
+        field :Other, String, camelize: true, null: true
+        field :OtherCapital, String, camelize: false, null: true, hash_key: "OtherCapital"
+      end
+
+      class QueryType < GraphQL::Schema::Object
+        field :search_results, ResultType, null: false
+        def search_results
+          {
+            "lowercase" => "lowercase-works",
+            "Capital" => "capital-camelize-false-works",
+            "Other" => "capital-camelize-true-works",
+            "OtherCapital" => "explicit-hash-key-works"
+          }
+        end
+      end
+
+      query(QueryType)
+    end
+
+    it "finds exact matches by hash key" do
+      res = HashKeySchema.execute <<-GRAPHQL
+      {
+        searchResults {
+          lowercase
+          Capital
+          Other
+          OtherCapital
+        }
+      }
+      GRAPHQL
+
+      search_results = res["data"]["searchResults"]
+      expected_result = {
+        "lowercase" => "lowercase-works",
+        "Capital" => "capital-camelize-false-works",
+        "Other" => "capital-camelize-true-works",
+        "OtherCapital" => "explicit-hash-key-works"
+      }
+      assert_equal expected_result, search_results
     end
   end
 end

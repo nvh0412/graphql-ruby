@@ -8,6 +8,77 @@
 
 ### Bug Fix
 
+## 1.15.4 (28 July 2020)
+
+### New Features
+
+- Pundit: add `pundit_policy_class_for(object, context)` and `pundit_role_for(object, context)` for custom runtime lookups
+
+## 1.15.3 (17 July 2020)
+
+### Bug Fix
+
+- Subscriptions: don't send empty updates when subscriptions return `:no_update`
+
+## 1.15.2 (16 July 2020)
+
+### New Features
+
+- OperationStore: improve handling of archived operations in index views
+
+## 1.15.1 (16 July 2020)
+
+(Oops, bad release!)
+
+## 1.15.0 (15 July 2020)
+
+- OperationStore: Store & display `last_used_at` for operation store clients and operations. To upgrade, add the column to your ActiveRecord table:
+
+  ```ruby
+  add_column :graphql_client_operations, :last_used_at, :datetime
+  ```
+
+  (It works out-of-the-box with the Redis backend.)
+
+  You can opt out of this feature by adding `use GraphQL::Pro::OperationStore, ... default_touch_last_used_at: false` to your schema setup.
+
+- OperationStore: Add archive/unarchive workflow for operations. To upgrade, add the column to your table:
+
+  ```ruby
+  add_column :graphql_client_operations, :is_archived, :boolean, index: true
+  ```
+
+  (It works out-of-the-box with the Redis backend.)
+
+- OperationStore: Fix indexing of enum values
+
+## 1.14.1 (29 June 2020)
+
+- CanCan: Accept `can_can_attribute:` configuration, which is passed as the third input to `.can?(...)`
+
+## 1.14.0 (13 June 2020)
+
+### New Features
+
+- Add PubnubSubscriptions
+- Update subscription implementations to support `broadcast: true` when available
+
+### Bug Fix
+
+- More Ruby 2.7 warning fixes
+
+## 1.13.6 (8 June 2020)
+
+### Bug Fix
+
+- Return the proper `pageInfo` values when it's requested before `edges` or `nodes` (#2972)
+
+## 1.13.5 (11 May 2020)
+
+### Bug Fix
+
+- Fix some warnings on Ruby 2.7
+
 ## 1.13.4 (17 Apr 2020)
 
 ### Bug Fix

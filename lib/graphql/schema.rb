@@ -101,14 +101,12 @@ module GraphQL
       # - Right away, if `value` is not registered with `lazy_resolve`
       # - After resolving `value`, if it's registered with `lazy_resolve` (eg, `Promise`)
       # @api private
-      def after_lazy(value)
+      def after_lazy(value, &block)
         if lazy?(value)
           GraphQL::Execution::Lazy.new do
             result = sync_lazy(value)
             # The returned result might also be lazy, so check it, too
-            after_lazy(result) do |final_result|
-              yield(final_result) if block_given?
-            end
+            after_lazy(result, &block)
           end
         else
           yield(value) if block_given?
@@ -129,7 +127,7 @@ module GraphQL
         end
       end
 
-      # @return [Symbol, nil] The method name to lazily resolve `obj`, or nil if `obj`'s class wasn't registered wtih {#lazy_resolve}.
+      # @return [Symbol, nil] The method name to lazily resolve `obj`, or nil if `obj`'s class wasn't registered with {#lazy_resolve}.
       def lazy_method_name(obj)
         lazy_methods.get(obj)
       end
@@ -146,10 +144,10 @@ module GraphQL
       def after_any_lazies(maybe_lazies)
         if maybe_lazies.any? { |l| lazy?(l) }
           GraphQL::Execution::Lazy.all(maybe_lazies).then do |result|
-            yield
+            yield result
           end
         else
-          yield
+          yield maybe_lazies
         end
       end
     end
@@ -872,8 +870,8 @@ module GraphQL
       # Returns the JSON response of {Introspection::INTROSPECTION_QUERY}.
       # @see {#as_json}
       # @return [String]
-      def to_json(*args)
-        JSON.pretty_generate(as_json(*args))
+      def to_json(**args)
+        JSON.pretty_generate(as_json(**args))
       end
 
       # Return the Hash response of {Introspection::INTROSPECTION_QUERY}.
@@ -1077,6 +1075,7 @@ module GraphQL
             raise GraphQL::Error, "Second definition of `subscription(...)` (#{new_subscription_object.inspect}) is invalid, already configured with #{@subscription_object.inspect}"
           else
             @subscription_object = new_subscription_object
+            add_subscription_extension_if_necessary
             add_type_and_traverse(new_subscription_object, root: true)
             nil
           end
@@ -1391,7 +1390,7 @@ module GraphQL
       # rubocop:disable Lint/DuplicateMethods
       module ResolveTypeWithType
         def resolve_type(type, obj, ctx)
-          first_resolved_type = if type.is_a?(Module) && type.respond_to?(:resolve_type)
+          first_resolved_type, resolved_value = if type.is_a?(Module) && type.respond_to?(:resolve_type)
             type.resolve_type(obj, ctx)
           else
             super
@@ -1399,7 +1398,11 @@ module GraphQL
 
           after_lazy(first_resolved_type) do |resolved_type|
             if resolved_type.nil? || (resolved_type.is_a?(Module) && resolved_type.respond_to?(:kind)) || resolved_type.is_a?(GraphQL::BaseType)
-              resolved_type
+              if resolved_value
+                [resolved_type, resolved_value]
+              else
+                resolved_type
+              end
             else
               raise ".resolve_type should return a type definition, but got #{resolved_type.inspect} (#{resolved_type.class}) from `resolve_type(#{type}, #{obj}, #{ctx})`"
             end
@@ -1508,7 +1511,11 @@ module GraphQL
 
       # @return [GraphQL::Execution::Errors, Class<GraphQL::Execution::Errors::NullErrorHandler>]
       def error_handler
-        @error_handler ||= GraphQL::Execution::Errors::NullErrorHandler
+        if defined?(@error_handler)
+          @error_handler
+        else
+          find_inherited_value(:error_handler, GraphQL::Execution::Errors::NullErrorHandler)
+        end
       end
 
       def lazy_resolve(lazy_class, value_method)
@@ -1527,9 +1534,9 @@ module GraphQL
 
       # Add several directives at once
       # @param new_directives [Class]
-      def directives(new_directives = nil)
-        if new_directives
-          new_directives.each { |d| directive(d) }
+      def directives(*new_directives)
+        if new_directives.any?
+          new_directives.flatten.each { |d| directive(d) }
         end
 
         find_inherited_value(:directives, default_directives).merge(own_directives)
@@ -1543,11 +1550,11 @@ module GraphQL
       end
 
       def default_directives
-        {
+        @default_directives ||= {
           "include" => GraphQL::Schema::Directive::Include,
           "skip" => GraphQL::Schema::Directive::Skip,
           "deprecated" => GraphQL::Schema::Directive::Deprecated,
-        }
+        }.freeze
       end
 
       def tracer(new_tracer)
@@ -1639,6 +1646,20 @@ module GraphQL
         inherited_instrumenters = find_inherited_value(:instrumenters) || Hash.new { |h,k| h[k] = [] }
         inherited_instrumenters.merge(own_instrumenters) do |_step, inherited, own|
           inherited + own
+        end
+      end
+
+      # @api private
+      def add_subscription_extension_if_necessary
+        if interpreter? && !defined?(@subscription_extension_added) && subscription && self.subscriptions
+          @subscription_extension_added = true
+          if subscription.singleton_class.ancestors.include?(Subscriptions::SubscriptionRoot)
+            warn("`extend Subscriptions::SubscriptionRoot` is no longer required; you may remove it from #{self}'s `subscription` root type (#{subscription}).")
+          else
+            subscription.fields.each do |name, field|
+              field.extension(Subscriptions::DefaultSubscriptionResolveExtension)
+            end
+          end
         end
       end
 
@@ -1762,16 +1783,7 @@ module GraphQL
           if owner.kind.union?
             # It's a union with possible_types
             # Replace the item by class name
-            owner.type_memberships.each { |tm|
-              possible_type = tm.object_type
-              if possible_type.is_a?(String) && (possible_type == type.name)
-                # This is a match of Ruby class names, not graphql names,
-                # since strings are used to refer to constants.
-                tm.object_type = type
-              elsif possible_type.is_a?(LateBoundType) && possible_type.graphql_name == type.graphql_name
-                tm.object_type = type
-              end
-            }
+            owner.assign_type_membership_object_type(type)
             own_possible_types[owner.graphql_name] = owner.possible_types
           elsif type.kind.interface? && owner.kind.object?
             new_interfaces = []

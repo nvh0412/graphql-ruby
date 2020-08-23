@@ -39,15 +39,15 @@ describe GraphQL::Schema::Subscription do
       field :toot, Toot, null: false
       field :user, User, null: false
       # Can't subscribe to private users
-      def authorized?(user:)
+      def authorized?(user:, path:, query:)
         if user[:private]
-          raise GraphQL::ExecutionError, "Can't subscribe to private user"
+          raise GraphQL::ExecutionError, "Can't subscribe to private user (#{path})"
         else
           true
         end
       end
 
-      def subscribe(user:)
+      def subscribe(user:, **args)
         if context[:prohibit_subscriptions]
           raise GraphQL::ExecutionError, "You don't have permission to subscribe"
         else
@@ -56,7 +56,7 @@ describe GraphQL::Schema::Subscription do
         end
       end
 
-      def update(user:)
+      def update(user:, **args)
         if context[:viewer] == user
           # don't update for one's own toots.
           # (IRL it would make more sense to implement this in `#subscribe`)
@@ -102,8 +102,7 @@ describe GraphQL::Schema::Subscription do
     end
 
     class Subscription < GraphQL::Schema::Object
-      extend GraphQL::Subscriptions::SubscriptionRoot
-      field :toot_was_tooted, subscription: TootWasTooted
+      field :toot_was_tooted, subscription: TootWasTooted, extras: [:path, :query]
       field :direct_toot_was_tooted, subscription: DirectTootWasTooted
       field :users_joined, subscription: UsersJoined
       field :new_users_joined, subscription: NewUsersJoined
@@ -127,6 +126,11 @@ describe GraphQL::Schema::Subscription do
     subscription(Subscription)
     use GraphQL::Execution::Interpreter
     use GraphQL::Analysis::AST
+    use GraphQL::Execution::Errors
+
+    rescue_from(StandardError) { |err, *rest|
+      raise "This should never happen: #{err.class}: #{err.message}"
+    }
 
     def self.object_from_id(id, ctx)
       USERS[id]
@@ -300,7 +304,7 @@ describe GraphQL::Schema::Subscription do
         "data"=>nil,
         "errors"=>[
           {
-            "message"=>"Can't subscribe to private user",
+            "message"=>"Can't subscribe to private user ([\"tootWasTooted\"])",
             "locations"=>[{"line"=>2, "column"=>9}],
             "path"=>["tootWasTooted"]
           },
@@ -398,6 +402,8 @@ describe GraphQL::Schema::Subscription do
       assert_equal "Merry Christmas, here's a new Ruby version", mailbox1.first["data"]["tootWasTooted"]["toot"]["body"]
       # But not matz:
       assert_equal [], mailbox2
+      # `:no_update` doesn't cause an unsubscribe
+      assert_equal 2, in_memory_subscription_count
     end
 
     it "unsubscribes if a `loads:` argument is not found" do
@@ -452,7 +458,7 @@ describe GraphQL::Schema::Subscription do
       obj = OpenStruct.new(toot: { body: "Merry Christmas, here's a new Ruby version" }, user: matz)
       SubscriptionFieldSchema.subscriptions.trigger(:toot_was_tooted, {handle: "matz"}, obj)
       assert_equal 2, mailbox.size
-      assert_equal ["Can't subscribe to private user"], mailbox.last["errors"].map { |e| e["message"] }
+      assert_equal ["Can't subscribe to private user ([\"tootWasTooted\"])"], mailbox.last["errors"].map { |e| e["message"] }
       # The subscription remains in place
       assert_equal 1, in_memory_subscription_count
     end

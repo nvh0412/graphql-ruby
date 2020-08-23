@@ -48,7 +48,7 @@ module ConnectionAssertions
       # Make a way to get local variables (passed in as args)
       # into method resolvers below
       class << self
-        attr_accessor :get_items, :connection_class, :total_count_connection_class
+        attr_accessor :get_items, :connection_class, :total_count_connection_class, :custom_connection_class_with_custom_edge
       end
 
       self.get_items = get_items
@@ -63,12 +63,37 @@ module ConnectionAssertions
       custom_item_edge = Class.new(GraphQL::Types::Relay::BaseEdge) do
         node_type item
         graphql_name "CustomItemEdge"
+
+        field :parent_class, String, null: false
+
+        def parent_class
+          object.parent.class.inspect
+        end
+
+        field :node_class_name, String, null: false
+      end
+
+      custom_edge_class = Class.new(GraphQL::Pagination::Connection::Edge) do
+        def node_class_name
+          node.class.name
+        end
       end
 
       custom_item_connection = Class.new(GraphQL::Types::Relay::BaseConnection) do
         graphql_name "CustomItemConnection"
-        edge_type custom_item_edge
+        edge_type custom_item_edge, edge_class: custom_edge_class
         field :total_count, Integer, null: false
+      end
+
+      if connection_class
+        self.custom_connection_class_with_custom_edge = Class.new(connection_class) do
+          const_set(:Edge, custom_edge_class)
+        end
+      end
+
+      custom_items_with_custom_edge = Class.new(GraphQL::Types::Relay::BaseConnection) do
+        graphql_name "AnotherCustomItemConnection"
+        edge_type custom_item_edge
       end
 
       query = Class.new(GraphQL::Schema::Object) do
@@ -90,6 +115,14 @@ module ConnectionAssertions
 
         def custom_items
           context.schema.total_count_connection_class.new(get_items)
+        end
+
+        if connection_class
+          field :custom_items_with_custom_edge, custom_items_with_custom_edge, null: false
+
+          def custom_items_with_custom_edge
+            context.schema.custom_connection_class_with_custom_edge.new(get_items)
+          end
         end
 
         field :limited_items, item.connection_type, null: false, max_page_size: 2
@@ -248,7 +281,7 @@ module ConnectionAssertions
 
       describe "customizing" do
         it "serves custom fields" do
-          res = schema.execute <<-GRAPHQL
+          res = schema.execute <<-GRAPHQL, root_value: :something
           {
             items: customItems(first: 3) {
               nodes {
@@ -258,14 +291,47 @@ module ConnectionAssertions
                 node  {
                   name
                 }
+                parentClass
+                nodeClassName
               }
               totalCount
             }
           }
           GRAPHQL
-
           assert_names(["Avocado", "Beet", "Cucumber"], res)
           assert_equal 10, res["data"]["items"]["totalCount"]
+          edge = res["data"]["items"]["edges"][0]
+          # Since this connection hangs off `Query`, the root value is the parent.
+          assert_equal "Symbol", edge["parentClass"]
+          if schema.get_items
+            node_class_name = schema.get_items.call.first.class.name
+            assert_instance_of String, node_class_name
+            assert_equal node_class_name, edge["nodeClassName"]
+          end
+        end
+
+        it "uses custom ::Edge classes" do
+          skip "Not supported" if schema.connection_class.nil?
+          res = schema.execute <<-GRAPHQL, root_value: :something
+          {
+            items: customItemsWithCustomEdge(first: 3) {
+              nodes {
+                name
+              }
+              edges {
+                node  {
+                  name
+                }
+                nodeClassName
+              }
+            }
+          }
+          GRAPHQL
+          assert_names(["Avocado", "Beet", "Cucumber"], res)
+          edge = res["data"]["items"]["edges"][0]
+          node_class_name = schema.get_items.call.first.class.name
+          assert_instance_of String, node_class_name
+          assert_equal node_class_name, edge["nodeClassName"]
         end
 
         it "applies local max-page-size settings" do

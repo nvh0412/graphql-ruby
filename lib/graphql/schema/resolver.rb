@@ -40,6 +40,7 @@ module GraphQL
           @arguments_by_keyword[arg.keyword] = arg
         end
         @arguments_loads_as_type = self.class.arguments_loads_as_type
+        @prepared_arguments = nil
       end
 
       # @return [Object] The application object this field is being resolved on
@@ -50,6 +51,10 @@ module GraphQL
 
       # @return [GraphQL::Schema::Field]
       attr_reader :field
+
+      def arguments
+        @prepared_arguments || raise("Arguments have not been prepared yet, still waiting for #load_arguments to resolve. (Call `.arguments` later in the code.)")
+      end
 
       # This method is _actually_ called by the runtime,
       # it does some preparation and then eventually calls
@@ -74,6 +79,7 @@ module GraphQL
             # for that argument, or may return a lazy object
             load_arguments_val = load_arguments(args)
             context.schema.after_lazy(load_arguments_val) do |loaded_args|
+              @prepared_arguments = loaded_args
               # Then call `authorized?`, which may raise or may return a lazy object
               authorized_val = if loaded_args.any?
                 authorized?(**loaded_args)
@@ -220,7 +226,7 @@ module GraphQL
         # or use it as a configuration method to assign a return type
         # instead of generating one.
         # TODO unify with {#null}
-        # @param new_type [Class, nil] If a type definition class is provided, it will be used as the return type of the field
+        # @param new_type [Class, Array<Class>, nil] If a type definition class is provided, it will be used as the return type of the field
         # @param null [true, false] Whether or not the field may return `nil`
         # @return [Class] The type which this field returns.
         def type(new_type = nil, null: nil)
@@ -250,6 +256,19 @@ module GraphQL
           @complexity || (superclass.respond_to?(:complexity) ? superclass.complexity : 1)
         end
 
+        def broadcastable(new_broadcastable)
+          @broadcastable = new_broadcastable
+        end
+
+        # @return [Boolean, nil]
+        def broadcastable?
+          if defined?(@broadcastable)
+            @broadcastable
+          else
+            (superclass.respond_to?(:broadcastable?) ? superclass.broadcastable? : nil)
+          end
+        end
+
         def field_options
           {
             type: type_expr,
@@ -261,6 +280,7 @@ module GraphQL
             null: null,
             complexity: complexity,
             extensions: extensions,
+            broadcastable: broadcastable?,
           }
         end
 

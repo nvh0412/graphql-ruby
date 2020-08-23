@@ -71,6 +71,13 @@ module GraphQL
       end
 
       class << self
+        # Set up a type-specific invalid null error to use when this object's non-null fields wrongly return `nil`.
+        # It should help with debugging and bug tracker integrations.
+        def inherited(child_class)
+          child_class.const_set(:InvalidNullError, GraphQL::InvalidNullError.subclass_for(child_class))
+          super
+        end
+
         def implements(*new_interfaces, **options)
           new_memberships = []
           new_interfaces.each do |int|
@@ -79,14 +86,14 @@ module GraphQL
                 raise "#{int} cannot be implemented since it's not a GraphQL Interface. Use `include` for plain Ruby modules."
               end
 
-              new_memberships << int.type_membership_class.new(int, self, options)
+              new_memberships << int.type_membership_class.new(int, self, **options)
 
               # Include the methods here,
               # `.fields` will use the inheritance chain
               # to find inherited fields
               include(int)
             elsif int.is_a?(GraphQL::InterfaceType)
-              new_memberships << int.type_membership_class.new(int, self, options)
+              new_memberships << int.type_membership_class.new(int, self, **options)
             elsif int.is_a?(String) || int.is_a?(GraphQL::Schema::LateBoundType)
               if options.any?
                 raise ArgumentError, "`implements(...)` doesn't support options with late-loaded types yet. Remove #{options} and open an issue to request this feature."

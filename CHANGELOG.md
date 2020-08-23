@@ -8,6 +8,141 @@
 
 ### Bug fixes
 
+## 1.11.3 (13 August 2020)
+
+### Breaking changes
+
+- Reverted the `required` and `default_value` argument behaviour change in 1.11.2 since it was not spec compliant #3066
+
+### New features
+
+- Improve resolver method conflict warning #3069, #3062
+- Store arguments on `Mutation` instances after they're loaded #3073
+
+### Bug fixes
+
+- Fix connection wrappers on lazy lists #3070
+
+## 1.11.2 (1 August 2020)
+
+### Breaking changes
+
+- Previously, GraphQL-Ruby allowed _both_ `default_value: ...` and `required: true` in argument definitions. However, this definition doesn't make sense -- a default value is never used for a `required: true` argument. This configuration now raises an error. Remove the `default_value:` to get rid of the error. #3011
+
+### New features
+
+- Support Date, Time and OpenStruct in Subscription::Serialize #3057
+
+### Bug fixes
+
+- Speed up `DELETE_NODE` check #3053
+- Reject invalid enum values during definition #3055
+- Fix `.trigger` from unsubscribed ActionCable channel #3051
+- Fix error message from VariablesAreUsedAndDefined for anonymous queries #3050
+- Fix renaming variable identifiers in AST visitor #3045
+- Reject `default_value: ...` used with `required: true` during definition #3011
+- Use the configured `edge_class:` with new connections #3036
+- Don't call visible for unused arguments #3030, #3031
+- Properly load directives from introspection results #3021
+- Reject interfaces as members of unions #3024
+- Load deprecation reason from introspection results #3014
+- Fix arguments caching when extension modify arguments #3009
+
+## 1.11.1 (17 June 2020)
+
+### New Features
+
+- Add `StatsdTracing` #2996
+
+### Bug Fixes
+
+- Raise the proper `InvalidNullError` when a mutation field returns an invalid `nil` #2997
+
+## 1.11.0 (13 June 2020)
+
+### Breaking changes
+
+- Global tracers are removed (deprecated since 1.7.4) #2936
+- Fields defined in camel case (`field :doStuff`) will not line up to methods that are underscore case (`def do_stuff`). Instead, the given symbol is used _verbatim_. #2938 To work around this:
+
+  - Change the name of the method to match the field (eg, `def doStuff`)
+  - Change the name of the field to match the method (eg, `field :do_stuff`, let graphql-ruby camelize it for you)
+  - Or, add `resolver_method: :do_stuff` to explicitly map the field to a method on the object type definition
+
+  You can probably find instances of this in your application with a regexp like `/field :[a-z]+[A-Z]/`, and review them.
+
+### New features
+
+- `extend SubscriptionRoot` is no longer necessary #2770
+- Add `broadcast: true` option to subscriptions #2959
+- Add `Edge#parent` to new connection classes #2961
+
+### Bug fixes
+
+- Use the field name as configured for hash key or method name #2906
+
+## 1.10.12 (13 June 2020)
+
+### Bug fixes
+
+- Fix compatibility of `YYYY-mm-dd` with `Types::ISO8601DateTime` #2989
+- Remove unused ivar in InputObject #2987
+
+## 1.10.11 (11 June 2020)
+
+### New features
+
+- Scout tracer adds transaction name to traces #2969
+- `resolve_type` can optionally return a resolved object #2976
+- DateTime scalar returns a `Time` for better timezone handling #2973
+- Interpreter memory improvements #2980, #2978
+- Support lazy values from field-level authorization hooks #2977
+- Object generator infers fields from model classes #2954
+- Add type-specific runtime errors #2957
+
+### Bug fixes
+
+- Fix for error when using `extras:` with subscription fields #2984
+- Improve Schema.error_handler inheritance #2975
+- Add raw_value to conflict warning list #2958
+- Arguments#each_value yields ArgumentValues #2956
+
+## 1.10.10 (20 May 2020)
+
+### Bug Fixes
+
+- Fix lazy `loads:` with list arguments #2949
+- Show object fields even when inherited ones are hidden #2950
+- Use `reverse_each` in instrumenters #2945
+- Fix underscored names in introspection loader #2941
+- Fix array input to Date/DateTime types #2927
+- Fix method conflict warnings on schema loader #2934
+- Fix some Ruby 2.7 warnings #2925
+
+## 1.10.9 (4 May 2020)
+
+### New features
+
+- Add `Interpreter::Arguments#dig` #2912
+
+## 1.10.8 (27 April 2020)
+
+### Breaking changes
+
+- With the interpreter, `Query#arguments_for` returns `Interpreter::Arguments` instances instead of plain hashes. (They should work mostly the same, though.) #2881
+
+### New features
+
+- `Schema::Field#introspection?` returns true for built-in introspection-related fields
+
+### Bug fixes
+
+- Fix Ruby 2.7 warning on `Schema.to_json` #2905
+- Pass `&block` to nested method calls to reduce stack depths #2900
+- Fix lazy `loads:` with list arguments #2894
+- Fix `loads:` on nested input object #2895
+- Rescue base64 encoding errors in the encoder #2896
+
 ## 1.10.7 (16 April 2020)
 
 ### Breaking changes

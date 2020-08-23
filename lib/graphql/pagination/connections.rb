@@ -65,29 +65,42 @@ module GraphQL
 
       # Used by the runtime to wrap values in connection wrappers.
       # @api Private
-      def wrap(field, object, arguments, context, wrappers: all_wrappers)
+      def wrap(field, parent, items, arguments, context, wrappers: all_wrappers)
         impl = nil
 
-        object.class.ancestors.each { |cls|
+        items.class.ancestors.each { |cls|
           impl = wrappers[cls]
           break if impl
         }
 
         if impl.nil?
-          raise ImplementationMissingError, "Couldn't find a connection wrapper for #{object.class} during #{field.path} (#{object.inspect})"
+          raise ImplementationMissingError, "Couldn't find a connection wrapper for #{items.class} during #{field.path} (#{items.inspect})"
         end
 
         impl.new(
-          object,
+          items,
           context: context,
+          parent: parent,
           max_page_size: field.max_page_size || context.schema.default_max_page_size,
           first: arguments[:first],
           after: arguments[:after],
           last: arguments[:last],
           before: arguments[:before],
+          edge_class: edge_class_for_field(field),
         )
       end
 
+      # use an override if there is one
+      # @api private
+      def edge_class_for_field(field)
+        conn_type = field.type.unwrap
+        conn_type_edge_type = conn_type.respond_to?(:edge_class) && conn_type.edge_class
+        if conn_type_edge_type && conn_type_edge_type != Relay::Edge
+          conn_type_edge_type
+        else
+          nil
+        end
+      end
       protected
 
       attr_reader :wrappers

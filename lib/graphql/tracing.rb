@@ -7,6 +7,7 @@ require "graphql/tracing/data_dog_tracing"
 require "graphql/tracing/new_relic_tracing"
 require "graphql/tracing/scout_tracing"
 require "graphql/tracing/skylight_tracing"
+require "graphql/tracing/statsd_tracing"
 require "graphql/tracing/prometheus_tracing"
 
 if defined?(PrometheusExporter::Server)
@@ -15,8 +16,6 @@ end
 
 module GraphQL
   # Library entry point for performance metric reporting.
-  #
-  # __Warning:__ Installing/uninstalling tracers is not thread-safe. Do it during application boot only.
   #
   # @example Sending custom events
   #   query.trace("my_custom_event", { ... }) do
@@ -63,8 +62,9 @@ module GraphQL
       # @param key [String] The name of the event in GraphQL internals
       # @param metadata [Hash] Event-related metadata (can be anything)
       # @return [Object] Must return the value of the block
-      def trace(key, metadata)
-        call_tracers(0, key, metadata) { yield }
+      def trace(key, metadata, &block)
+        return yield if @tracers.empty?
+        call_tracers(0, key, metadata, &block)
       end
 
       private
@@ -76,39 +76,14 @@ module GraphQL
       # @param key [String] The current event name
       # @param metadata [Object] The current event object
       # @return Whatever the block returns
-      def call_tracers(idx, key, metadata)
+      def call_tracers(idx, key, metadata, &block)
         if idx == @tracers.length
           yield
         else
-          @tracers[idx].trace(key, metadata) { call_tracers(idx + 1, key, metadata) { yield } }
+          @tracers[idx].trace(key, metadata) { call_tracers(idx + 1, key, metadata, &block) }
         end
       end
     end
-
-    class << self
-      # Install a tracer to receive events.
-      # @param tracer [<#trace(key, metadata)>]
-      # @return [void]
-      # @deprecated See {Schema#tracer} or use `context: { tracers: [...] }`
-      def install(tracer)
-        warn("GraphQL::Tracing.install is deprecated, add it to the schema with `tracer(my_tracer)` instead.")
-        if !tracers.include?(tracer)
-          @tracers << tracer
-        end
-      end
-
-      # @deprecated See {Schema#tracer} or use `context: { tracers: [...] }`
-      def uninstall(tracer)
-        @tracers.delete(tracer)
-      end
-
-      # @deprecated See {Schema#tracer} or use `context: { tracers: [...] }`
-      def tracers
-        @tracers ||= []
-      end
-    end
-    # Initialize the array
-    tracers
 
     module NullTracer
       module_function
